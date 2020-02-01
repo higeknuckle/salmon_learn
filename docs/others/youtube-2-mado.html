@@ -202,7 +202,78 @@ window.onload = function () {
 				set_video_size_sub($video);
 			});
 		}
+		$('.control-button').attr('disabled', !(video_id_1 || video_id_2));
 		save();
+	});
+	$('#button-play').on('click', function () {
+		for (const player of Object.values(window.player)) {
+			if (player) {
+				player.playVideo();
+			}
+		}
+	});
+	$('#button-pause').on('click', function () {
+		for (const player of Object.values(window.player)) {
+			if (player) {
+				player.pauseVideo();
+			}
+		}
+	});
+	$('#button-sf-5s').on('click', function () {
+		// 2つの動画の相対的な再生位置をずらさないようにシークする
+		const seekCandidates = [5, ];
+		for (const player of Object.values(window.player)) {
+			if (player) {
+				seekCandidates.push(player.getDuration() - player.getCurrentTime());
+			}
+		}
+		for (const player of Object.values(window.player)) {
+			if (player) {
+				player.seekTo(player.getCurrentTime() + Math.min(...seekCandidates), true);
+			}
+		}
+	});
+	$('#button-sf-10s').on('click', function () {
+		// 2つの動画の相対的な再生位置をずらさないようにシークする
+		const seekCandidates = [10, ];
+		for (const player of Object.values(window.player)) {
+			if (player) {
+				seekCandidates.push(player.getDuration() - player.getCurrentTime());
+			}
+		}
+		for (const player of Object.values(window.player)) {
+			if (player) {
+				player.seekTo(player.getCurrentTime() + Math.min(...seekCandidates), true);
+			}
+		}
+	});
+	$('#button-sb-5s').on('click', function () {
+		// 2つの動画の相対的な再生位置をずらさないようにシークする
+		const seekCandidates = [5, ];
+		for (const player of Object.values(window.player)) {
+			if (player) {
+				seekCandidates.push(player.getCurrentTime());
+			}
+		}
+		for (const player of Object.values(window.player)) {
+			if (player) {
+				player.seekTo(player.getCurrentTime() - Math.min(...seekCandidates), true);
+			}
+		}
+	});
+	$('#button-sb-10s').on('click', function () {
+		// 2つの動画の相対的な再生位置をずらさないようにシークする
+		const seekCandidates = [10, ];
+		for (const player of Object.values(window.player)) {
+			if (player) {
+				seekCandidates.push(player.getCurrentTime());
+			}
+		}
+		for (const player of Object.values(window.player)) {
+			if (player) {
+				player.seekTo(player.getCurrentTime() - Math.min(...seekCandidates), true);
+			}
+		}
 	});
 	load();
 	console.log('html is ready!');
@@ -334,6 +405,12 @@ function create_iframe (video_id, div_id, call_back) {
 		events: {
 			'onReady': function () {
 				call_back($('#' + div_id));
+			},
+			'onStateChange': function (e) {
+				// 一方の動画再生が終了したらもう一方も一時停止する
+				if (e.data === YT.PlayerState.ENDED) {
+					$('#button-pause').trigger('click');
+				}
 			}
 		},
 		playerVars: {
@@ -393,7 +470,10 @@ body {
 	left: 0px;
 	top: 0px;
 }
-	.button-wrapper #change-button {
+	.control-button {
+		height: 30px;
+	}
+	#change-button {
 		width: 200px;
 		height: 50px;
 	}
@@ -423,7 +503,13 @@ body {
 	<p><label for="is-enabled-animation-check">
 	<input id="is-enabled-animation-check" type="checkbox"> 視点入れ替え時にアニメーションする 時間 <input class="animation-time-input number-input" type="text" > ミリ秒
 	</label></p>
-	<button id="change-button">視点入れ替え</button>
+	<button class="control-button" id="change-button" disabled>視点入れ替え</button>
+	<button class="control-button" id="button-sb-10s" disabled>10秒&#x23ea;</button>
+	<button class="control-button" id="button-sb-5s" disabled>5秒&#x23ea;</button>
+	<button class="control-button" id="button-play" disabled>再生&#x25b6;</button>
+	<button class="control-button" id="button-pause" disabled>一時停止&#x23f8;</button>
+	<button class="control-button" id="button-sf-5s" disabled>5秒&#x23e9;</button>
+	<button class="control-button" id="button-sf-10s" disabled>10秒&#x23e9;</button>
 </div>
 <div class="video-area">
 	<h2 class="video-title"></h2>
