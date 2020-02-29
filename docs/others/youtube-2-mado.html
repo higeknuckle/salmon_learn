@@ -53,6 +53,8 @@ window.onload = function () {
 		'video-1': null,
 		'video-2': null
 	};
+	window.seekSec = 0;
+	window.timeoutId = null;
 	$('#change-button').on('click', function () {
 		var class_main = 'video-main';
 		var class_sub = 'video-sub';
@@ -220,60 +222,16 @@ window.onload = function () {
 		}
 	});
 	$('#button-sf-5s').on('click', function () {
-		// 2つの動画の相対的な再生位置をずらさないようにシークする
-		const seekCandidates = [5, ];
-		for (const player of Object.values(window.player)) {
-			if (player) {
-				seekCandidates.push(player.getDuration() - player.getCurrentTime());
-			}
-		}
-		for (const player of Object.values(window.player)) {
-			if (player) {
-				player.seekTo(player.getCurrentTime() + Math.min(...seekCandidates), true);
-			}
-		}
+		handleSeek(5);
 	});
 	$('#button-sf-10s').on('click', function () {
-		// 2つの動画の相対的な再生位置をずらさないようにシークする
-		const seekCandidates = [10, ];
-		for (const player of Object.values(window.player)) {
-			if (player) {
-				seekCandidates.push(player.getDuration() - player.getCurrentTime());
-			}
-		}
-		for (const player of Object.values(window.player)) {
-			if (player) {
-				player.seekTo(player.getCurrentTime() + Math.min(...seekCandidates), true);
-			}
-		}
+		handleSeek(10);
 	});
 	$('#button-sb-5s').on('click', function () {
-		// 2つの動画の相対的な再生位置をずらさないようにシークする
-		const seekCandidates = [5, ];
-		for (const player of Object.values(window.player)) {
-			if (player) {
-				seekCandidates.push(player.getCurrentTime());
-			}
-		}
-		for (const player of Object.values(window.player)) {
-			if (player) {
-				player.seekTo(player.getCurrentTime() - Math.min(...seekCandidates), true);
-			}
-		}
+		handleSeek(-5);
 	});
 	$('#button-sb-10s').on('click', function () {
-		// 2つの動画の相対的な再生位置をずらさないようにシークする
-		const seekCandidates = [10, ];
-		for (const player of Object.values(window.player)) {
-			if (player) {
-				seekCandidates.push(player.getCurrentTime());
-			}
-		}
-		for (const player of Object.values(window.player)) {
-			if (player) {
-				player.seekTo(player.getCurrentTime() - Math.min(...seekCandidates), true);
-			}
-		}
+		handleSeek(-10);
 	});
 	load();
 	console.log('html is ready!');
@@ -407,6 +365,7 @@ function create_iframe (video_id, div_id, call_back) {
 				call_back($('#' + div_id));
 			},
 			'onStateChange': function (e) {
+				// console.log(div_id, e.data);
 				// 一方の動画再生が終了したらもう一方も一時停止する
 				if (e.data === YT.PlayerState.ENDED) {
 					$('#button-pause').trigger('click');
@@ -418,6 +377,132 @@ function create_iframe (video_id, div_id, call_back) {
 		   "showinfo": 0,
 		   "controls": 1
 		}
+	});
+}
+function sleep(ms) {
+	return new Promise((resolve, reject) => {
+		setTimeout(resolve, ms);
+	});
+}
+
+/**
+ * シークボタン押下時のハンドラ。連続押下に対応。
+ * @param {Number} seekAmount 前に進めるときは正、後ろに戻すときは負の秒数を指定
+ */
+function handleSeek(seekAmount) {
+	// すでに連続でシークボタンが押されている場合に予約済みのシーク処理をキャンセル
+	if (timeoutId) {
+		clearTimeout(timeoutId);
+	}
+	window.seekSec = window.seekSec + seekAmount;
+
+	$('#seek-message').text(getSeekMessage());
+	window.timeoutId = setTimeout(seekVideos, 1000); // TODO: 1000 -> 300
+}
+/**
+ * シークボタンの横に表示するテキストメッセージを生成して返す。
+ * @returns {String} シークする秒数と方向を示すメッセージ
+ */
+ function getSeekMessage() {
+	if (window.seekSec > 0) {
+		return `${window.seekSec}秒 >>`;
+	} else if (window.seekSec < 0) {
+		return `<< ${- window.seekSec}秒`;
+	} else {
+		return '';
+	}
+}
+/**
+ * すべての動画を再生位置の同期を保ちながらシークする。
+ * <code>window.seekSec</code>の値をもとにシークする秒数を決定する。
+ * 両方のバッファリングが完了するまで待機する(再生位置の同期を保つ)。
+ */
+ function seekVideos() {
+	if (window.seekSec !== 0) {
+		$('.control-button').attr('disabled', true);
+
+		// 操作対象となるプレイヤーオブジェクトの配列（空(null)のプレイヤーはフィルタ）
+		const targetPlayers = Object.values(window.player).filter((item) => !!item);
+		// 各動画の始端／終端を考慮したシーク量を計算
+		const seekAdjusted = calculateSeekAdjusted(targetPlayers, window.seekSec);
+
+		// 各動画のシーク処理（非同期処理）
+		const resultPromises = [];
+		for (let i = 0; i < targetPlayers.length; i++) {
+			resultPromises[i] = seekVideo(targetPlayers[i], seekAdjusted);
+		}
+		// すべてのバッファリングが完了するのを待って再生
+		Promise.all(resultPromises).then((values) => {
+			for (let i = 0; i < targetPlayers.length; i++) {
+				// もともと一時停止だった場合は再生しない
+				if (values[i].beforeState !== YT.PlayerState.PAUSED) {
+					targetPlayers[i].playVideo();
+				}
+			}
+		}).catch((err) => {
+			console.log(err);
+		});
+	}
+
+	// リセット
+	window.seekSec = 0;
+	window.timeoutId = null;
+	$('#seek-message').text(getSeekMessage());
+	$('.control-button').attr('disabled', false);
+}
+/**
+ * 各動画の始端／終端を考慮したシーク量を計算する関数。
+ * <code>window.seekSec</code>の値、および各動画の現在位置を元にシークする秒数を決定する。
+ * @param {Array} players 計算対象のYTPlayerオブジェクトの配列。null値を含めないこと
+ * @param {Number} seekSec 指定されたシーク秒数。前に進めるときは正、後ろに戻すときは負
+ * @returns {Number} 各動画の始端／終端を考慮したシーク量。前に進めるときは正、後ろに戻すときは負の秒数
+ */
+ function calculateSeekAdjusted(players, seekSec) {
+	const seekCandidates = [seekSec, ]; // シーク秒数の候補
+
+	if (seekSec > 0) {
+		// 指定したシーク秒数および各動画残り時間のうち最小値をシーク量とする
+		seekCandidates.push(...players.map((p) => p.getDuration() - p.getCurrentTime()));
+		return Math.min(...seekCandidates);
+	} else if (seekSec < 0) {
+		// 指定したシーク秒数および各動画経過時間のうち最小値をシーク量とする（負数なので計算には注意）
+		seekCandidates.push(...players.map((p) => -p.getCurrentTime()));
+		return Math.max(...seekCandidates);
+	} else {
+		return 0;
+	}
+}
+/**
+ * 指定したプレイヤーをシークし、バッファリング完了を待って一時停止する。
+ * @param {YT.Player} player シーク対象のプレイヤーオブジェクト
+ * @param {Number} seekSec 前に進めるときは正、後ろに戻すときは負の秒数を指定
+ * @returns {Promise} 処理結果を返すPromiseオブジェクト
+ * @returns {Object.Number} beforeState シーク操作前のプレイヤー状態
+ * @returns {Object.Object} result YT.Player.seekTo()の実行結果
+ */
+function seekVideo(player, seekSec) {
+	return new Promise((resolve, reject) => {
+		const beforeState = player.getPlayerState();
+
+		player.playVideo(); // バッファリング状態の変化を検知するために、一時停止中の動画も再生
+		const result = player.seekTo(player.getCurrentTime() + seekSec, true);
+		console.log(player.i, player.getPlayerState());
+
+		// FIXME: シークした瞬間にBUFFERINGにならないらしく、意図した動作になっていない
+		// シーク→イベントリスナ追加（BUFFERING検知したらコールバック（BUFFERING完了まで待ってイベントリスナ削除）実行）
+		// BUFFERINGになるまで待つ
+
+		while (true) {
+			if (player.getPlayerState() !== YT.PlayerState.BUFFERING) {
+				player.pauseVideo(); // 再生タイミングの同期を取りたいので一時停止
+				resolve({
+					beforeState: beforeState,
+					result: result,
+				});
+				break;
+			}
+		}
+		// });
 	});
 }
 </script>
@@ -483,6 +568,10 @@ body {
 	.url-input {
 		width: 440px;
 	}
+	#seek-message {
+		/* TODO: リニアなアニメーションを付けたい */
+		color: red;
+	}
 </style>
 </head>
 <body>
@@ -510,6 +599,7 @@ body {
 	<button class="control-button" id="button-pause" disabled>一時停止&#x23f8;</button>
 	<button class="control-button" id="button-sf-5s" disabled>5秒&#x23e9;</button>
 	<button class="control-button" id="button-sf-10s" disabled>10秒&#x23e9;</button>
+	<span id="seek-message"></span>
 </div>
 <div class="video-area">
 	<h2 class="video-title"></h2>
